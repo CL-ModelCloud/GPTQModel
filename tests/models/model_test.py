@@ -1,5 +1,4 @@
 # -- do not touch
-import gc
 import os
 import sys
 
@@ -13,7 +12,6 @@ os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 # -- end do not touch
 from pathlib import Path  # noqa: E402
 
-
 sys.path.insert(0, f"{str(Path(__file__).resolve().parent.parent)}/models")  # noqa: E402
 import contextlib  # noqa: E402
 import shutil  # noqa: E402
@@ -22,17 +20,15 @@ import unittest  # noqa: E402
 
 import torch.cuda  # noqa: E402
 from datasets import load_dataset  # noqa: E402
-from lm_eval.utils import make_table  # noqa: E402
-from ovis.image_to_test_dataset import get_calib_dataset  # noqa: E402
-from transformers import AutoTokenizer, AutoProcessor  # noqa: E402
-
 from gptqmodel import BACKEND, GPTQModel  # noqa: E402
 from gptqmodel.nn_modules.qlinear import BaseQuantLinear  # noqa: E402
 from gptqmodel.quantization import FORMAT  # noqa: E402
 from gptqmodel.quantization.config import QuantizeConfig  # noqa: E402
 from gptqmodel.utils.eval import lm_eval  # noqa: E402
 from gptqmodel.utils.torch import torch_empty_cache  # noqa: E402
-
+from lm_eval.utils import make_table  # noqa: E402
+from ovis.image_to_test_dataset import get_calib_dataset  # noqa: E402
+from transformers import AutoProcessor, AutoTokenizer  # noqa: E402
 
 RAND_SEED = 898
 
@@ -170,7 +166,7 @@ class ModelTest(unittest.TestCase):
             else:
                 return model, tokenizer
 
-    def loadQuantModel(self, model_id_or_path, trust_remote_code=False, tokenizer_path=None):
+    def loadQuantModel(self, model_id_or_path, trust_remote_code=False, tokenizer_path=None, **args):
         if tokenizer_path is None:
             tokenizer_path = model_id_or_path
         else:
@@ -181,6 +177,7 @@ class ModelTest(unittest.TestCase):
             model_id_or_path,
             trust_remote_code=trust_remote_code,
             device_map={"": "cpu"} if self.LOAD_BACKEND == BACKEND.IPEX else "auto",
+            kwargs=args if args else {}
         )
 
         return model, tokenizer

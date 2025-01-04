@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-import copy
 import json
 import os
 import shutil
-from typing import Dict, List, Optional, Union, Any
+import time
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 import torch.nn as nn
 from packaging import version
 from transformers import AutoModelForCausalLM, PreTrainedModel, PreTrainedTokenizerBase, modeling_utils
 
+from ..nn_modules.hooked_linear import replace_linear_with_hooked_linear
 from ..quantization import GPTQ, QuantizeConfig
 from ..quantization.config import FORMAT, QUANTIZE_BLACK_LIST, AutoRoundQuantizeConfig
 from ..utils.backend import BACKEND
@@ -18,23 +19,14 @@ from ..utils.data import collate_data, split_dataset_into_length_batches
 from ..utils.device import get_cpu_usage_memory, get_gpu_usage_memory
 from ..utils.importer import select_quant_linear
 from ..utils.logger import setup_logger
-from ..utils.model import (
-    check_to_quantized,
-    find_layers,
-    get_device,
-    get_module_by_name_prefix,
-    get_moe_layer_modules,
-    move_to,
-    nested_move_to,
-    pack_model,
-    normalize_tokenizer,
-    MODALITY,
-)
+from ..utils.model import (MODALITY, check_to_quantized, find_layers, get_device, get_module_by_name_prefix,
+                           get_moe_layer_modules, move_to, nested_move_to, normalize_tokenizer, pack_model)
 from ..utils.progress import ProgressBar
 from ..utils.torch import torch_empty_cache
-from ._const import CPU, DEVICE, get_best_device
+from ._const import CPU, DEVICE
 from .loader import ModelLoader
-from .writer import QUANT_LOG_DAMP, QUANT_LOG_LAYER, QUANT_LOG_LOSS, QUANT_LOG_MODULE, QUANT_LOG_TIME, ModelWriter
+from .writer import (QUANT_LOG_DAMP, QUANT_LOG_FWD_TIME, QUANT_LOG_LAYER,
+                     QUANT_LOG_LOSS, QUANT_LOG_MODULE, QUANT_LOG_TIME, ModelWriter)
 
 
 def check_support_param_buffer_assignment(*args, **kwargs):
@@ -129,11 +121,11 @@ class BaseGPTQModel(nn.Module):
         if isinstance(calibration_dataset[0], (str, list)) or (isinstance(calibration_dataset[0], list) and all(isinstance(x, int) for x in calibration_dataset[0])):
             if self.tokenizer is None:
                 raise ValueError(f"tokenizer must be provided when calibration_dataset is List[str] or List[int], type: {type(calibration_dataset[0])}")
-            
+
             # Convert strings/ints to tokenized format
             new_calibration_dataset = []
             for data in calibration_dataset:
-                # convert to tensor directly if already in token ids format (ints) 
+                # convert to tensor directly if already in token ids format (ints)
                 if isinstance(data, list) and all(isinstance(x, int) for x in data):
                     input_ids = torch.tensor([data], dtype=torch.long)
                     attention_mask = torch.ones_like(input_ids)
@@ -503,6 +495,9 @@ class BaseGPTQModel(nn.Module):
         module_names = []
         shared_kv_cache_dict = {}
 
+        # replace linear with hooked linear
+        replace_linear_with_hooked_linear(self.model)
+
         for i in layer_pb:
             layer_pb.set_description(f"Quantizing layer {i} of {layer_count - 1}")
             layer = layers[i]
@@ -573,9 +568,14 @@ class BaseGPTQModel(nn.Module):
 
                     return tmp
 
-                handles = []
+                handle = []
                 for name in subset:
-                    handles.append(subset[name].register_forward_hook(add_batch(name)))
+                    if hasattr(subset[name], 'forward_hook'):
+                        subset[name].forward_hook = add_batch(name)
+                    else:
+                        handle.append(subset[name].register_forward_hook(add_batch(name)))
+
+                fwd_start = time.time()
                 for j in range(num_batches):
                     layer_input = []
                     for k, layer_inp in enumerate(layer_inputs[j]):
@@ -605,8 +605,18 @@ class BaseGPTQModel(nn.Module):
                         else:
                             layer(*layer_input, **additional_layer_inputs)
 
-                for h in handles:
+                    del layer_input
+                    del additional_layer_inputs
+
+                fwd_end = time.time()
+                fwd_time = fwd_end - fwd_start
+
+                for h in handle:
                     h.remove()
+
+                for name in subset:
+                    if hasattr(subset[name], 'forward_hook'):
+                        subset[name].forward_hook = None
 
                 for name_index, name in enumerate(subset):
                     layer_pb.set_description(f"Quantizing {name} in layer {i} of {layer_count - 1}")
@@ -643,7 +653,7 @@ class BaseGPTQModel(nn.Module):
                     module_names.append(f"layer-{i}-{name}")
 
                     stat = {QUANT_LOG_LAYER: i, QUANT_LOG_MODULE: name, QUANT_LOG_LOSS: f"{avg_loss:.5f}",
-                            QUANT_LOG_DAMP: f"{damp_percent:.5f}", QUANT_LOG_TIME: f"{duration:.3f}"}
+                            QUANT_LOG_DAMP: f"{damp_percent:.5f}", QUANT_LOG_TIME: f"{duration:.3f}", QUANT_LOG_FWD_TIME: f"{fwd_time:.3f}"}
                     if self.quantize_config.dynamic is not None:
                         stat["dynamic"] = self.quantize_config.dynamic_get(layer_name=layer_name)
 
@@ -788,7 +798,6 @@ class BaseGPTQModel(nn.Module):
             return super().__getattr__(item)
         except Exception:
             return getattr(self.model, item)
-
 
 __all__ = ["BaseGPTQModel"]
 

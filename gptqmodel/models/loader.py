@@ -7,8 +7,9 @@ from typing import Dict, List, Optional, Union
 import accelerate
 import torch
 import transformers
+from huggingface_hub import snapshot_download
 from packaging.version import InvalidVersion, Version
-from transformers import AutoConfig, PretrainedConfig, AutoTokenizer
+from transformers import AutoConfig, AutoTokenizer, PretrainedConfig
 from transformers.modeling_utils import no_init_weights
 from transformers.utils.generic import ContextManagers
 
@@ -17,29 +18,14 @@ from ..nn_modules.qlinear.ipex import IPEXQuantLinear
 from ..quantization import QuantizeConfig
 from ..quantization.config import FORMAT, FORMAT_FIELD_JSON, MIN_VERSION_WITH_V2
 from ..utils.backend import BACKEND
-from ..utils.importer import auto_select_device, select_quant_linear, normalize_device_device_map
+from ..utils.importer import auto_select_device, normalize_device_device_map, select_quant_linear
 from ..utils.logger import setup_logger
-from ..utils.marlin import (
-    _validate_marlin_compatibility,
-    _validate_marlin_device_support,
-    prepare_model_for_marlin_load,
-)
-from ..utils.model import (
-    auto_dtype,
-    convert_gptq_v1_to_v2_format,
-    find_layers,
-    get_checkpoints,
-    get_moe_layer_modules,
-    gptqmodel_post_init,
-    make_quant,
-    simple_dispatch_model,
-    verify_model_hash,
-    verify_sharded_model_hashes,
-    normalize_tokenizer,
-)
+from ..utils.marlin import (_validate_marlin_compatibility,
+                            _validate_marlin_device_support, prepare_model_for_marlin_load)
+from ..utils.model import (auto_dtype, convert_gptq_v1_to_v2_format, find_layers, get_checkpoints,
+                           get_moe_layer_modules, gptqmodel_post_init, make_quant, normalize_tokenizer,
+                           simple_dispatch_model, verify_model_hash, verify_sharded_model_hashes)
 from ._const import DEVICE, SUPPORTED_MODELS, normalize_device
-from huggingface_hub import snapshot_download
-
 
 logger = setup_logger()
 
@@ -95,7 +81,7 @@ def get_model_local_path(pretrained_model_id_or_path, **kwargs):
         return pretrained_model_id_or_path
     else:
         return snapshot_download(pretrained_model_id_or_path, **kwargs)
-    
+
 def get_tokenizer(model_id_or_path, config, trust_remote_code: bool = False):
     try:
         tokenizer = AutoTokenizer.from_pretrained(model_id_or_path, trust_remote_code=trust_remote_code)
@@ -164,10 +150,6 @@ def ModelLoader(cls):
         # enforce some values despite user specified
         # non-quantized models are always loaded into cpu
         model_init_kwargs["device_map"] = cpu_device_map
-        # if flash_attn was installed and _attn_implementation_autoset was None, flash attention would be loaded
-        # but device map is cpu, it will trow non-supported device error
-        if Version(transformers.__version__) >= Version("4.46.0"):
-            model_init_kwargs["_attn_implementation_autoset"] = True
         model_init_kwargs["torch_dtype"] = torch_dtype
 
         if config.model_type not in SUPPORTED_MODELS:
@@ -329,7 +311,7 @@ def ModelLoader(cls):
             unsupported = _validate_marlin_compatibility(quantize_config)
             if unsupported is None and marlin_compatible:
                 logger.info(
-                    "You passed a model that is compatible with the Marlin int4*fp16 GPTQ kernel but backend is not BACKEND.MARLIN. We recommend using `backend=BACKEND.MARLIN` to use the optimized Marlin kernels for inference. Example: `model = GPTQModel.from_quantized(..., backend=BACKEND.MARLIN)`."
+                    "You passed a model that is compatible with the Marlin kernel. Use `BACKEND.MARLIN` for optimal inference with batching on Nvidia GPU: `model = GPTQModel.load(..., backend=BACKEND.MARLIN)`."
                 )
 
         if quantize_config.format == FORMAT.BITBLAS:
