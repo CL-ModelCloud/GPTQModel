@@ -95,7 +95,7 @@ class ModelTest(unittest.TestCase):
         datas = []
         for index, sample in enumerate(traindata):
             tokenized = tokenizer(sample['text'])
-            if len(tokenized.data['input_ids']) < 4096:
+            if len(tokenized.data['input_ids']) < self.INPUTS_MAX_LENGTH:
                 datas.append(tokenized)
                 if len(datas) >= 256:
                     break
@@ -253,7 +253,7 @@ class ModelTest(unittest.TestCase):
         return diff_pct
 
     def quant_lm_eval(self):
-        self.model, self.tokenizer = self.quantModel(self.NATIVE_MODEL_ID, trust_remote_code=self.TRUST_REMOTE_CODE, torch_dtype=self.TORCH_DTYPE, batch_size=10)
+        self.model, self.tokenizer = self.quantModel(self.NATIVE_MODEL_ID, trust_remote_code=self.TRUST_REMOTE_CODE, torch_dtype=self.TORCH_DTYPE)
 
         self.check_kernel(self.model, self.KERNEL_INFERENCE)
 

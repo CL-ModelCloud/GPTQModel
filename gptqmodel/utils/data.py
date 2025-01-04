@@ -138,54 +138,75 @@ def make_data_block(
     return new_samples
 
 
-# def collate_data(batch: List[Dict[str, List[List[int]]]], pad_token_id: int) -> Dict[str, Tensor]:
-#     def pad_batch(block: LongTensor, pads: Tensor):
-#         return torch.cat((block, pads.to(block.device)), dim=-1)
-#
-#     input_ids = [LongTensor(block["input_ids"]) for block in batch]
-#     attention_masks = [LongTensor(block["attention_mask"]) for block in batch]
-#
-#     inp_max_len = max([block.size(-1) for block in input_ids])
-#
-#     for i in range(len(batch)):
-#         block_bsz, block_inp_len = input_ids[i].shape
-#         pad_num = inp_max_len - block_inp_len
-#         if pad_num > 0:
-#             input_ids[i] = pad_batch(input_ids[i], torch.ones((block_bsz, pad_num)) * pad_token_id)
-#             attention_masks[i] = pad_batch(attention_masks[i], torch.zeros((block_bsz, pad_num)))
-#
-#     return {
-#         "input_ids": torch.cat(input_ids, dim=0).long(),
-#         "attention_mask": torch.cat(attention_masks, dim=0).long(),
-#     }
-
 def collate_data(batch: List[Dict[str, List[List[int]]]], pad_token_id: int) -> Dict[str, Tensor]:
-    target_length = 2048  # 固定的目标长度
+    def pad_batch(block: LongTensor, pads: Tensor):
+        return torch.cat((block, pads.to(block.device)), dim=-1)
 
-    all_input_ids = []
-    all_attention_masks = []
+    input_ids = [LongTensor(block["input_ids"]) for block in batch]
+    attention_masks = [LongTensor(block["attention_mask"]) for block in batch]
 
-    for block in batch:
-        for seq_ids, seq_masks in zip(block["input_ids"], block["attention_mask"]):
-            all_input_ids.extend(seq_ids)
-            all_attention_masks.extend(seq_masks)
+    inp_max_len = max([block.size(-1) for block in input_ids])
 
-    total_length = len(all_input_ids)
-    num_chunks = total_length // target_length
-
-    if num_chunks == 0:
-        raise ValueError("Datasets Count Error , Check Your Code!")
-
-    trimmed_input_ids = all_input_ids[:num_chunks * target_length]
-    trimmed_attention_masks = all_attention_masks[:num_chunks * target_length]
-
-    input_ids_tensor = torch.tensor(trimmed_input_ids, dtype=torch.long).view(num_chunks, target_length)
-    attention_masks_tensor = torch.tensor(trimmed_attention_masks, dtype=torch.long).view(num_chunks, target_length)
+    for i in range(len(batch)):
+        block_bsz, block_inp_len = input_ids[i].shape
+        pad_num = inp_max_len - block_inp_len
+        if pad_num > 0:
+            input_ids[i] = pad_batch(input_ids[i], torch.ones((block_bsz, pad_num)) * pad_token_id)
+            attention_masks[i] = pad_batch(attention_masks[i], torch.zeros((block_bsz, pad_num)))
 
     return {
-        "input_ids": input_ids_tensor,
-        "attention_mask": attention_masks_tensor,
+        "input_ids": torch.cat(input_ids, dim=0).long(),
+        "attention_mask": torch.cat(attention_masks, dim=0).long(),
     }
+
+
+def split_dataset_into_length_batches(
+        new_calibration_dataset: List[Dict[str, List[List[int]]]],
+        batch_length: int = 2048,
+) -> List[Dict[str, Tensor]]:
+    """
+    将 new_calibration_dataset 中的所有 input_ids 和 attention_mask 合并，
+    然后按照 batch_length 长度进行切分，返回切分后的 Batch 列表。
+    不足 batch_length 的最后一个 Batch 会被丢弃。
+
+    Args:
+        new_calibration_dataset (List[Dict[str, List[List[int]]]]): 原始数据集。
+        batch_length (int, optional): 每个 Batch 的长度。默认为 2048。
+
+    Returns:
+        List[Dict[str, Tensor]]: 切分后的 Batch 列表，每个 Batch 是一个字典，包含 'input_ids' 和 'attention_mask'。
+    """
+    flat_input_ids = []
+    flat_attention_mask = []
+
+    for sample in new_calibration_dataset:
+        for seq in sample["input_ids"]:
+            flat_input_ids.extend(seq)
+        for mask in sample["attention_mask"]:
+            flat_attention_mask.extend(mask)
+
+    assert len(flat_input_ids) == len(flat_attention_mask), "input_ids == attention_mask"
+
+    num_batches = len(flat_input_ids) // batch_length
+    if num_batches == 0:
+        raise ValueError("Check Datasets")
+
+    total_length = num_batches * batch_length
+    flat_input_ids = flat_input_ids[:total_length]
+    flat_attention_mask = flat_attention_mask[:total_length]
+
+    input_ids_batches = torch.tensor(flat_input_ids, dtype=torch.long).view(num_batches, batch_length)
+    attention_masks_batches = torch.tensor(flat_attention_mask, dtype=torch.long).view(num_batches, batch_length)
+
+    new_calibration_dataset_batched = []
+    for i in range(num_batches):
+        batch = {
+            "input_ids": input_ids_batches[i],
+            "attention_mask": attention_masks_batches[i],
+        }
+        new_calibration_dataset_batched.append(batch)
+
+    return new_calibration_dataset_batched
 
 
 def get_dataloader(
