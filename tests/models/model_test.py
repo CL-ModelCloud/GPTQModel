@@ -253,7 +253,7 @@ class ModelTest(unittest.TestCase):
         return diff_pct
 
     def quant_lm_eval(self):
-        self.model, self.tokenizer = self.quantModel(self.NATIVE_MODEL_ID, trust_remote_code=self.TRUST_REMOTE_CODE, torch_dtype=self.TORCH_DTYPE, batch_size=1)
+        self.model, self.tokenizer = self.quantModel(self.NATIVE_MODEL_ID, trust_remote_code=self.TRUST_REMOTE_CODE, torch_dtype=self.TORCH_DTYPE)
 
         self.check_kernel(self.model, self.KERNEL_INFERENCE)
 
