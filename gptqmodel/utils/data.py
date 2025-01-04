@@ -138,25 +138,53 @@ def make_data_block(
     return new_samples
 
 
+# def collate_data(batch: List[Dict[str, List[List[int]]]], pad_token_id: int) -> Dict[str, Tensor]:
+#     def pad_batch(block: LongTensor, pads: Tensor):
+#         return torch.cat((block, pads.to(block.device)), dim=-1)
+#
+#     input_ids = [LongTensor(block["input_ids"]) for block in batch]
+#     attention_masks = [LongTensor(block["attention_mask"]) for block in batch]
+#
+#     inp_max_len = max([block.size(-1) for block in input_ids])
+#
+#     for i in range(len(batch)):
+#         block_bsz, block_inp_len = input_ids[i].shape
+#         pad_num = inp_max_len - block_inp_len
+#         if pad_num > 0:
+#             input_ids[i] = pad_batch(input_ids[i], torch.ones((block_bsz, pad_num)) * pad_token_id)
+#             attention_masks[i] = pad_batch(attention_masks[i], torch.zeros((block_bsz, pad_num)))
+#
+#     return {
+#         "input_ids": torch.cat(input_ids, dim=0).long(),
+#         "attention_mask": torch.cat(attention_masks, dim=0).long(),
+#     }
+
 def collate_data(batch: List[Dict[str, List[List[int]]]], pad_token_id: int) -> Dict[str, Tensor]:
-    def pad_batch(block: LongTensor, pads: Tensor):
-        return torch.cat((block, pads.to(block.device)), dim=-1)
+    target_length = 2048  # 固定的目标长度
 
-    input_ids = [LongTensor(block["input_ids"]) for block in batch]
-    attention_masks = [LongTensor(block["attention_mask"]) for block in batch]
+    all_input_ids = []
+    all_attention_masks = []
 
-    inp_max_len = max([block.size(-1) for block in input_ids])
+    for block in batch:
+        for seq_ids, seq_masks in zip(block["input_ids"], block["attention_mask"]):
+            all_input_ids.extend(seq_ids)
+            all_attention_masks.extend(seq_masks)
 
-    for i in range(len(batch)):
-        block_bsz, block_inp_len = input_ids[i].shape
-        pad_num = inp_max_len - block_inp_len
-        if pad_num > 0:
-            input_ids[i] = pad_batch(input_ids[i], torch.ones((block_bsz, pad_num)) * pad_token_id)
-            attention_masks[i] = pad_batch(attention_masks[i], torch.zeros((block_bsz, pad_num)))
+    total_length = len(all_input_ids)
+    num_chunks = total_length // target_length
+
+    if num_chunks == 0:
+        raise ValueError("Datasets Count Error , Check Your Code!")
+
+    trimmed_input_ids = all_input_ids[:num_chunks * target_length]
+    trimmed_attention_masks = all_attention_masks[:num_chunks * target_length]
+
+    input_ids_tensor = torch.tensor(trimmed_input_ids, dtype=torch.long).view(num_chunks, target_length)
+    attention_masks_tensor = torch.tensor(trimmed_attention_masks, dtype=torch.long).view(num_chunks, target_length)
 
     return {
-        "input_ids": torch.cat(input_ids, dim=0).long(),
-        "attention_mask": torch.cat(attention_masks, dim=0).long(),
+        "input_ids": input_ids_tensor,
+        "attention_mask": attention_masks_tensor,
     }
 
 
