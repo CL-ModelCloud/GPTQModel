@@ -14,7 +14,7 @@ from transformers import AutoModelForCausalLM, PreTrainedModel, PreTrainedTokeni
 from ..quantization import GPTQ, QuantizeConfig
 from ..quantization.config import FORMAT, QUANTIZE_BLACK_LIST, AutoRoundQuantizeConfig
 from ..utils.backend import BACKEND
-from ..utils.data import collate_data
+from ..utils.data import collate_data, split_dataset_into_length_batches
 from ..utils.device import get_cpu_usage_memory, get_gpu_usage_memory
 from ..utils.importer import select_quant_linear
 from ..utils.logger import setup_logger
@@ -192,10 +192,14 @@ class BaseGPTQModel(nn.Module):
         if pad_token_id is None:
             raise ValueError("Calibration data requires model's `pad_token_id` or `eos_token_id` to be set: actual = `None`.")
 
-        new_calibration_dataset_batched = [
-            collate_data(new_calibration_dataset[start: start + batch_size], pad_token_id)
-            for start in range(0, len(new_calibration_dataset), batch_size)
-        ]
+        # Main batch Datasets
+        # new_calibration_dataset_batched = [
+        #     collate_data(new_calibration_dataset[start: start + batch_size], pad_token_id)
+        #     for start in range(0, len(new_calibration_dataset), batch_size)
+        # ]
+
+        # 2048
+        new_calibration_dataset_batched = split_dataset_into_length_batches(new_calibration_dataset)
 
 
         return new_calibration_dataset_batched

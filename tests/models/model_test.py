@@ -8,6 +8,7 @@ from gptqmodel.utils.model import MODALITY
 if sys.platform == "darwin":
     os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # -- end do not touch
 from pathlib import Path  # noqa: E402
 
@@ -96,7 +97,7 @@ class ModelTest(unittest.TestCase):
             tokenized = tokenizer(sample['text'])
             if len(tokenized.data['input_ids']) < self.INPUTS_MAX_LENGTH:
                 datas.append(tokenized)
-                if len(datas) >= 128:
+                if len(datas) >= 256:
                     break
 
         return datas

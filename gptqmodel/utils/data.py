@@ -160,6 +160,55 @@ def collate_data(batch: List[Dict[str, List[List[int]]]], pad_token_id: int) -> 
     }
 
 
+def split_dataset_into_length_batches(
+        new_calibration_dataset: List[Dict[str, List[List[int]]]],
+        batch_length: int = 2048,
+) -> List[Dict[str, Tensor]]:
+    """
+    将 new_calibration_dataset 中的所有 input_ids 和 attention_mask 合并，
+    然后按照 batch_length 长度进行切分，返回切分后的 Batch 列表。
+    不足 batch_length 的最后一个 Batch 会被丢弃。
+
+    Args:
+        new_calibration_dataset (List[Dict[str, List[List[int]]]]): 原始数据集。
+        batch_length (int, optional): 每个 Batch 的长度。默认为 2048。
+
+    Returns:
+        List[Dict[str, Tensor]]: 切分后的 Batch 列表，每个 Batch 是一个字典，包含 'input_ids' 和 'attention_mask'。
+    """
+    flat_input_ids = []
+    flat_attention_mask = []
+
+    for sample in new_calibration_dataset:
+        for seq in sample["input_ids"]:
+            flat_input_ids.extend(seq)
+        for mask in sample["attention_mask"]:
+            flat_attention_mask.extend(mask)
+
+    assert len(flat_input_ids) == len(flat_attention_mask), "input_ids == attention_mask"
+
+    num_batches = len(flat_input_ids) // batch_length
+    if num_batches == 0:
+        raise ValueError("Check Datasets")
+
+    total_length = num_batches * batch_length
+    flat_input_ids = flat_input_ids[:total_length]
+    flat_attention_mask = flat_attention_mask[:total_length]
+
+    input_ids_batches = torch.tensor(flat_input_ids, dtype=torch.long).view(num_batches, batch_length)
+    attention_masks_batches = torch.tensor(flat_attention_mask, dtype=torch.long).view(num_batches, batch_length)
+
+    new_calibration_dataset_batched = []
+    for i in range(num_batches):
+        batch = {
+            "input_ids": input_ids_batches[i],
+            "attention_mask": attention_masks_batches[i],
+        }
+        new_calibration_dataset_batched.append(batch)
+
+    return new_calibration_dataset_batched
+
+
 def get_dataloader(
     data_path_or_name: str,
     prompt_col_name: str,
