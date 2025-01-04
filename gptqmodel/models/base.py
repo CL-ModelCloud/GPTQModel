@@ -193,13 +193,13 @@ class BaseGPTQModel(nn.Module):
             raise ValueError("Calibration data requires model's `pad_token_id` or `eos_token_id` to be set: actual = `None`.")
 
         # Main batch Datasets
-        # new_calibration_dataset_batched = [
-        #     collate_data(new_calibration_dataset[start: start + batch_size], pad_token_id)
-        #     for start in range(0, len(new_calibration_dataset), batch_size)
-        # ]
+        new_calibration_dataset_batched = [
+            collate_data(new_calibration_dataset[start: start + batch_size], pad_token_id)
+            for start in range(0, len(new_calibration_dataset), batch_size)
+        ]
 
         # 2048
-        new_calibration_dataset_batched = split_dataset_into_length_batches(new_calibration_dataset)
+        # new_calibration_dataset_batched = split_dataset_into_length_batches(new_calibration_dataset)
 
 
         return new_calibration_dataset_batched
