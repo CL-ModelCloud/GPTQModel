@@ -697,6 +697,9 @@ class BaseGPTQModel(nn.Module):
                 del layer_input
                 del additional_layer_inputs
 
+                if (j + 1) % 32 == 0:
+                    torch_empty_cache()
+
 
             layers[i] = move_to(layer, CPU)
             del layer
