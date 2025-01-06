@@ -4,7 +4,7 @@ import json
 import os
 import shutil
 import time
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, Tuple
 
 import torch
 import torch.nn as nn
@@ -562,7 +562,7 @@ class BaseGPTQModel(nn.Module):
                     continue
 
                 def add_batch(name):
-                    def tmp(_, inp, out):
+                    def tmp(_, inp: Tuple[torch.Tensor, ...], out: torch.Tensor):
                         # gptq is mutable.
                         gptq[name].add_batch(inp[0].data, out.data)  # noqa: F821
 
@@ -694,7 +694,9 @@ class BaseGPTQModel(nn.Module):
                     )
                     layer_outputs.append([layer_output])
 
-                torch_empty_cache()
+                del layer_input
+                del additional_layer_inputs
+
 
             layers[i] = move_to(layer, CPU)
             del layer
